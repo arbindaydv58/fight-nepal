@@ -1,11 +1,17 @@
 from fastapi import FastAPI
-import sqlite3
-con = sqlite3.connect("fights.db")
 from pydantic import BaseModel
+import sqlite3
 
-def initalize_databse():
+app = FastAPI()
+
+# ✅ create database if not exists
+con = sqlite3.connect("fights.db", check_same_thread=False)
+
+
+def initialize_database():
     create_event_table = """
-    CREATE TABLE events (
+    CREATE TABLE IF NOT EXISTS events(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
         eventName TEXT,
         participantOne TEXT,
         participantTwo TEXT,
@@ -15,105 +21,67 @@ def initalize_databse():
     """
     cursor = con.cursor()
     cursor.execute(create_event_table)
-app = FastAPI()
+    con.commit()
 
 
-@app.get("/")   
+# initialize DB
+initialize_database()
+
+
+@app.get("/")
 def main():
-    return "flight-nepal"
+    return {"message": "flight-nepal"}
 
-class CreateEventRequest(BaseModel):  # <-- add colon here and fix typo in "Crete"
+
+class CreateEventRequest(BaseModel):
     eventName: str
     participantOne: str
     participantTwo: str
     time: str
     winner: str
 
+
 @app.post("/event")
 def create_event(event: CreateEventRequest):
+    insert_statement = """
+    INSERT INTO events (eventName, participantOne, participantTwo, time, winner)
+    VALUES (?, ?, ?, ?, ?)
+    """
+    cursor = con.cursor()
+    cursor.execute(
+        insert_statement,
+        (event.eventName, event.participantOne, event.participantTwo, event.time, event.winner)
+    )
+    con.commit()
+    return {"message": "Event created successfully", "event": event}
 
-
-
-    return event
-
-
-@app.get("/event/delete")
-def delete_event():
-    return "delete event"
 
 @app.get("/event/get-all")
 def get_all_events():
-    return "All event"
+    cursor = con.cursor()
+    cursor.execute("SELECT * FROM events")
+    rows = cursor.fetchall()
+    events = []
+    for row in rows:
+        events.append({
+            "id": row[0],
+            "eventName": row[1],
+            "participantOne": row[2],
+            "participantTwo": row[3],
+            "time": row[4],
+            "winner": row[5]
+        })
+    return {"events": events}
+
+
+@app.delete("/event/{event_id}")
+def delete_event(event_id: int):
+    cursor = con.cursor()
+    cursor.execute("DELETE FROM events WHERE id = ?", (event_id,))
+    con.commit()
+    return {"message": f"Event with id {event_id} deleted successfully"}
 
 
 if __name__ == "__main__":
-    main()
-
-
-# from fastapi import FastAPI
-# from pydantic import BaseModel
-# import sqlite3
-
-# app = FastAPI()
-
-# # ✅ Define request body with Pydantic
-# class Event(BaseModel):
-#     name: str
-#     fighterOne: str
-#     fighterTwo: str
-#     date: str  # ISO format: YYYY-MM-DD
-
-# # ✅ Create database and table if not exists
-# con = sqlite3.connect("fights.db", check_same_thread=False)
-# cur = con.cursor()
-# cur.execute("""
-# CREATE TABLE IF NOT EXISTS events (
-#     id INTEGER PRIMARY KEY AUTOINCREMENT,
-#     name TEXT NOT NULL,
-#     fighterOne TEXT NOT NULL,
-#     fighterTwo TEXT NOT NULL,
-#     date TEXT NOT NULL
-# )
-# """)
-# con.commit()
-
-
-# @app.get("/")
-# def main():
-#     return {"message": "flight-nepal"}
-
-
-# # ✅ Insert event into database
-# @app.post("/event")
-# def create_event(event: Event):
-#     cur.execute(
-#         "INSERT INTO events (name, fighterOne, fighterTwo, date) VALUES (?, ?, ?, ?)",
-#         (event.name, event.fighterOne, event.fighterTwo, event.date),
-#     )
-#     con.commit()
-#     return {"message": "Event created successfully", "event": event.dict()}
-
-
-# # ✅ Delete all events (just for demo)
-# @app.get("/event/delete")
-# def delete_event():
-#     cur.execute("DELETE FROM events")
-#     con.commit()
-#     return {"message": "All events deleted"}
-
-
-# # ✅ Get all events
-# @app.get("/event/get-all")
-# def get_all_events():
-#     cur.execute("SELECT * FROM events")
-#     rows = cur.fetchall()
-#     events = [
-#         {"id": row[0], "name": row[1], "fighterOne": row[2], "fighterTwo": row[3], "date": row[4]}
-#         for row in rows
-#     ]
-#     return {"events": events}
-
-
-# if __name__ == "__main__":
-#     import uvicorn
-#     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    import uvicorn
+    uvicorn.run(app, host="127.0.0.1", port=8000)
